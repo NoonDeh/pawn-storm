@@ -57,48 +57,24 @@ export async function POST(request: Request) {
   const supabase = getAdminClient();
   const effect = donationEffect(coins);
 
-  const { data: session, error: sessionError } = await supabase
-    .from("game_sessions")
-    .select("id, balance, status")
-    .eq("id", sessionId)
-    .maybeSingle();
-
-  if (sessionError) {
-    return Response.json({ error: "Failed to load session" }, { status: 500 });
-  }
-  if (!session || session.status !== "active") {
-    return Response.json({ error: "Session is not active" }, { status: 409 });
-  }
-
-  const { error: insertError } = await supabase.from("donations").insert({
-    session_id: sessionId,
-    external_id: externalId,
-    donor_name: donorName,
-    coins,
-    time_seconds: effect.timeSeconds,
-    capital_added: effect.capitalAdded,
+  // One transaction in Postgres: lock the session row, insert the donation, add capital.
+  const { data: result, error: rpcError } = await supabase.rpc("record_donation", {
+    p_session_id: sessionId,
+    p_external_id: externalId,
+    p_donor_name: donorName,
+    p_coins: coins,
+    p_time_seconds: effect.timeSeconds,
+    p_capital_added: effect.capitalAdded,
   });
 
-  if (insertError) {
-    // Unique violation on external_id means this donation was already processed.
-    if (insertError.code === "23505") {
-      return Response.json({ ok: true, duplicate: true }, { status: 200 });
-    }
+  if (rpcError) {
     return Response.json({ error: "Failed to record donation" }, { status: 500 });
   }
-
-  if (effect.capitalAdded > 0) {
-    const { error: balanceError } = await supabase
-      .from("game_sessions")
-      .update({
-        balance: Number(session.balance) + effect.capitalAdded,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", sessionId);
-
-    if (balanceError) {
-      return Response.json({ error: "Donation saved but balance update failed" }, { status: 500 });
-    }
+  if (result === "inactive") {
+    return Response.json({ error: "Session is not active" }, { status: 409 });
+  }
+  if (result === "duplicate") {
+    return Response.json({ ok: true, duplicate: true }, { status: 200 });
   }
 
   return Response.json(
