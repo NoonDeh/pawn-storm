@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { getAdminClient } from "@/lib/supabase/admin";
-import { VoteButtons } from "./vote-buttons";
 
 export default function Home() {
   return (
@@ -128,7 +127,9 @@ async function GameContent() {
               <Stat label="Harga awal" value={money.format(Number(auction.starting_bid))} />
               <Stat label="Tawaran saat ini" value={money.format(Number(auction.current_bid))} />
             </dl>
-            <VoteButtons auctionId={auction.id} voteEndsAt={auction.vote_ends_at} />
+            <p className="rounded-xl bg-amber-50 p-4 text-center font-medium text-amber-800">
+              Ketik <span className="font-bold">1</span> untuk TAWAR atau <span className="font-bold">2</span> untuk MENYERAH di kolom komentar.
+            </p>
           </section>
         ) : (
           <Message title="Menunggu lelang" text="Barang berikutnya sedang disiapkan." />
