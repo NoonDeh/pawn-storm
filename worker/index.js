@@ -8,6 +8,8 @@ console.log('SUPABASE_URL:', process.env.SUPABASE_URL || 'NOT FOUND');
 console.log('SUPABASE_SERVICE_ROLE_KEY:', process.env.SUPABASE_SERVICE_ROLE_KEY ? 'OK' : 'NOT FOUND');
 console.log('TIKTOK_USERNAME:', process.env.TIKTOK_USERNAME || 'NOT FOUND');
 console.log('SESSION_ID:', process.env.SESSION_ID || 'NOT FOUND');
+console.log('TIKTOK_SESSIONID:', process.env.TIKTOK_SESSIONID || 'NOT FOUND');
+console.log('TIKTOK_TT_TARGET_IDC:', process.env.TIKTOK_TT_TARGET_IDC || 'NOT FOUND');
 
 // Initialize Supabase admin client
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -35,11 +37,38 @@ let currentRound = 1;
     return;
   }
 
-  // Create TikTok client
+  // Build session cookie object
+  const sessionCookie = process.env.TIKTOK_SESSIONID && process.env.TIKTOK_TT_TARGET_IDC
+    ? {
+        type: 'cookie',
+        value: {
+          sessionId: process.env.TIKTOK_SESSIONID,
+          ttTargetIdc: process.env.TIKTOK_TT_TARGET_IDC
+        }
+      }
+    : undefined;
+
+  // Create TikTok client WITH session (authenticated connection) + request headers
   const tiktokClient = new TikTokLiveConnection(tiktokUsername, {
+    authenticateWs: true,
+    session: sessionCookie,
     requestHeaders: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
+  });
+
+  // Handle connection events
+  tiktokClient.on('connected', (data) => {
+    console.log(`✅ Connected to TikTok LIVE: ${data.roomId}`);
+  });
+
+  tiktokClient.on('disconnected', () => {
+    console.log('❌ Disconnected from TikTok LIVE');
+  });
+
+  // Handle error events
+  tiktokClient.on('error', (err) => {
+    console.error('❌ TikTok connection error:', err.message);
   });
 
   // Handle chat messages
@@ -101,17 +130,15 @@ let currentRound = 1;
     }
   });
 
-  // Handle connection events
-  tiktokClient.on('connected', (data) => {
-    console.log(`✅ Connected to TikTok LIVE: ${data.roomId}`);
-  });
-
-  tiktokClient.on('disconnected', () => {
-    console.log('❌ Disconnected from TikTok LIVE');
-  });
-
   // Start the client
-  await tiktokClient.connect();
+  try {
+    await tiktokClient.connect();
+    console.log('🟢 Connected to TikTok LIVE!');
+  } catch (connectErr) {
+    console.error('❌ Failed to connect to TikTok LIVE:', connectErr.message);
+    console.error('   Tips: Pastikan Anda sedang LIVE di TikTok, dan session ID valid.');
+    process.exit(1);
+  }
 
   // Graceful shutdown
   process.on('SIGINT', () => {
